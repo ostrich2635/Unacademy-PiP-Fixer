@@ -12,7 +12,7 @@ A lightweight Chrome extension that bypasses Picture-in-Picture (PiP) blocks on 
 
 Since this extension is not currently on the Chrome Web Store, you can install it manually in just a few seconds:
 
-1. **Download the code:** Download it from the [release page](https://github.com/aISHWARYsINHA/Unacademy-PiP-Fixer/releases/tag/v1.0.0) and extract it to a folder on your computer.
+1. **Download the code:** Download it from the [release page](https://github.com/aISHWARYsINHA/Unacademy-PiP-Fixer/releases) and extract it to a folder on your computer.
 2. **Open Extensions:** Open Google Chrome and type `chrome://extensions/` into your address bar.
 3. **Enable Developer Mode:** Toggle the **Developer mode** switch in the top-right corner of the page.
 4. **Load the Extension:** Click the **Load unpacked** button in the top-left corner and select the folder where you extracted the code.
