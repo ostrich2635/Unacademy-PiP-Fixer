@@ -1,7 +1,7 @@
 # Unacademy PiP Fixer 🎥
 
 A lightweight Chrome extension that bypasses Picture-in-Picture (PiP) blocks on Unacademy's video player. It allows you to pop the educator's camera (or the main whiteboard) out into a native, floating, and fully resizable window, completely bypassing the restricted in-browser dragging limits.
-![Unacademy PiP Fixer Demo](Recording 2026-03-12 113838.gif)
+![Unacademy PiP Fixer Demo](Recording%202026-03-12%20113838.gif)
 ## ✨ Features
 * **Forces Native PiP:** Strips away the `disablePictureInPicture` attributes hidden in the site's code.
 * **Fixes Dragging Boundaries:** By moving the video to your OS's native PiP player, you are no longer restricted by the website's invisible HTML padding or CSS boundaries.
