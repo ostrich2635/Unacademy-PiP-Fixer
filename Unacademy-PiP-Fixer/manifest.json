@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Unacademy PiP Fixer",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Hides the Unacademy camera box and forces native Picture-in-Picture.",
   "permissions": ["activeTab", "scripting"],
   "host_permissions": [
@@ -14,10 +14,19 @@
     "128": "icon128.png"
   },
   "action": {
-    "default_title": "Click to Pop Out Video",
+    "default_title": "Click to Pop Out Video (Alt+C)",
     "default_icon": "icon48.png"
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+C",
+        "mac": "Command+Shift+C"
+      },
+      "description": "Activate Picture-in-Picture"
+    }
   }
 }
