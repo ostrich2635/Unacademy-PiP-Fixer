@@ -7,6 +7,8 @@ A lightweight Chrome extension that bypasses Picture-in-Picture (PiP) blocks on 
 * **Fixes Dragging Boundaries:** By moving the video to your OS's native PiP player, you are no longer restricted by the website's invisible HTML padding or CSS boundaries.
 * **One-Click Execution:** Click the extension icon to instantly pop the video out.
 * **Privacy First:** Requires no logins, tracks no data, and runs entirely locally in your browser.
+* **Intelligent Canvas Resizing:** When Picture-in-Picture (PiP) is activated, the `drawing-area` container automatically expands to **87% width**, significantly increasing the visible workspace for the whiteboard.
+* **Fully Reversible Layout:** The extension now tracks state changes; pressing **Alt + C** again instantly restores the whiteboard and camera container to their original dimensions.
 
 ## 🚀 Installation
 
