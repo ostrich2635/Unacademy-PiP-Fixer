@@ -1,115 +1,124 @@
-// Helper to convert RGB to Hex
-function rgb2hex(rgb) {
-  if (/^#[0-9A-F]{6}$/i.test(rgb)) return rgb;
-  const rgbMatch = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-  if (!rgbMatch) return "#202022";
-  function hex(x) {
-    return ("0" + parseInt(x).toString(16)).slice(-2);
-  }
-  return "#" + hex(rgbMatch[1]) + hex(rgbMatch[2]) + hex(rgbMatch[3]);
-}
-
 document.addEventListener('DOMContentLoaded', () => {
-  const togglePipBtn = document.getElementById('toggle-pip');
-  const colorPicker = document.getElementById('bg-color-picker');
-  const hexCodeDisplay = document.getElementById('hex-code');
+    const colorPreview = document.getElementById('colorPreview');
+    const hexCodeDisplay = document.getElementById('hexCode');
+    const colorPicker = document.getElementById('colorPicker');
+    const eyeDropperBtn = document.getElementById('eyeDropperBtn');
+    const applyBtn = document.getElementById('applyBtn');
+    const resetBtn = document.getElementById('resetBtn');
 
-  // Update hex display & apply color instantly when user changes the color picker
-  colorPicker.addEventListener('input', (e) => {
-    const newColor = e.target.value.toUpperCase();
-    hexCodeDisplay.textContent = newColor;
-    
-    // Apply color to the active tab immediately
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0] && tabs[0].url.includes("unacademy.com")) {
-        chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id },
-          func: (color) => {
-            const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-            if (appWrapper) {
-              appWrapper.style.backgroundColor = color;
-              // Set custom color flag so triggerPiP doesn't override it
-              appWrapper.dataset.customColor = "true"; 
-            }
-          },
-          args: [newColor]
-        });
-      }
-    });
-  });
+    // Default Unacademy dark mode color
+    const defaultColor = '#202022';
 
-  // Get current color from active tab to initialize the popup
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0] && tabs[0].url.includes("unacademy.com")) {
-      chrome.scripting.executeScript(
-        {
-          target: { tabId: tabs[0].id },
-          func: () => {
-            const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-            if (appWrapper) {
-              return window.getComputedStyle(appWrapper).backgroundColor;
-            }
-            return null;
-          }
-        },
-        (results) => {
-          if (results && results[0] && results[0].result) {
-            const hex = rgb2hex(results[0].result);
-            colorPicker.value = hex;
-            hexCodeDisplay.textContent = hex.toUpperCase();
-          }
+    // Function to convert RGB to Hex
+    function rgbToHex(rgb) {
+        if (!rgb || rgb === 'rgba(0, 0, 0, 0)') return null;
+        let match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+        if (!match) {
+            match = rgb.match(/^rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)$/);
         }
-      );
+        if (!match) return null;
+        
+        function hex(x) {
+            return ("0" + parseInt(x).toString(16)).slice(-2);
+        }
+        return "#" + hex(match[1]) + hex(match[2]) + hex(match[3]);
     }
-  });
 
-  // Toggle PiP
-  togglePipBtn.addEventListener('click', () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0] && tabs[0].url.includes("unacademy.com")) {
+    // Function injected into the page to get the background color
+    function getPageBackgroundColor() {
+        const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+        if (appWrapper) {
+            return window.getComputedStyle(appWrapper).backgroundColor;
+        }
+        return window.getComputedStyle(document.body).backgroundColor;
+    }
+
+    // Function injected into the page to set the background color
+    function setPageBackgroundColor(color) {
+        const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+        if (appWrapper) {
+            appWrapper.style.setProperty('background-color', color, 'important');
+        } else {
+            document.body.style.setProperty('background-color', color, 'important');
+        }
+    }
+
+    // Initialize popup with current color from the page
+    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+        if (!tabs || tabs.length === 0) return;
+        
         chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id, allFrames: true },
-          func: () => {
-            const cameraContainer = document.querySelector('div[class*="RectangleCamera__CameraContainer"]');
-            const video = cameraContainer ? cameraContainer.querySelector('video') : null;
-            const drawingArea = document.getElementById('drawing-area');
-
-            if (!video) {
-              alert("No video found to PiP!");
-              return;
+            target: {tabId: tabs[0].id, allFrames: true},
+            func: getPageBackgroundColor,
+        }, (results) => {
+            if (chrome.runtime.lastError || !results || !results[0]) {
+                console.error("Error getting background color", chrome.runtime.lastError);
+                return;
+            }
+            
+            let rgbColor = results[0].result;
+            let hex = rgbToHex(rgbColor);
+            
+            if (!hex) {
+                hex = defaultColor; // fallback
             }
 
-            if (document.pictureInPictureElement) {
-              document.exitPictureInPicture().catch(err => console.error(err));
-            } else {
-              video.removeAttribute('disablePictureInPicture');
-              video.requestPictureInPicture().then(() => {
-                if (cameraContainer) cameraContainer.style.display = 'none';
-                if (drawingArea) drawingArea.style.width = '82%';
-                
-                // Background & Sidebar fix when entering PiP
-                const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-                const sidebar = document.getElementById('clx-sidebar');
-
-                if (appWrapper) {
-                  // Only set to default dark if the user hasn't set a custom color
-                  if (!appWrapper.dataset.customColor) {
-                    appWrapper.style.backgroundColor = '#202022';
-                  }
-                }
-                if (sidebar) {
-                  sidebar.style.display = 'none';
-                }
-              }).catch(err => {
-                console.error("PiP failed to launch:", err);
-                alert("Please click anywhere on the video player first to focus the page, then try again.");
-              });
-            }
-          }
+            // Update UI
+            updateUI(hex);
         });
-      } else {
-        alert("This extension only works on Unacademy.");
-      }
     });
-  });
+
+    function updateUI(color) {
+        colorPreview.style.backgroundColor = color;
+        hexCodeDisplay.textContent = color.toUpperCase();
+        colorPicker.value = color;
+    }
+
+    // When user picks a new color in the color picker
+    colorPicker.addEventListener('input', (e) => {
+        const newColor = e.target.value;
+        updateUI(newColor);
+    });
+
+    // EyeDropper API support
+    if (!window.EyeDropper) {
+        eyeDropperBtn.style.display = 'none';
+    } else {
+        eyeDropperBtn.addEventListener('click', async () => {
+            const eyeDropper = new EyeDropper();
+            try {
+                const result = await eyeDropper.open();
+                updateUI(result.sRGBHex);
+            } catch (e) {
+                // User canceled the eyedropper
+                console.log(e);
+            }
+        });
+    }
+
+    // When user clicks Apply
+    applyBtn.addEventListener('click', () => {
+        const selectedColor = colorPicker.value;
+        chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+            if (!tabs || tabs.length === 0) return;
+            chrome.scripting.executeScript({
+                target: {tabId: tabs[0].id, allFrames: true},
+                func: setPageBackgroundColor,
+                args: [selectedColor]
+            });
+        });
+    });
+
+    // When user clicks Reset
+    resetBtn.addEventListener('click', () => {
+        updateUI(defaultColor);
+        chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+            if (!tabs || tabs.length === 0) return;
+            chrome.scripting.executeScript({
+                target: {tabId: tabs[0].id, allFrames: true},
+                func: setPageBackgroundColor,
+                args: [defaultColor]
+            });
+        });
+    });
 });

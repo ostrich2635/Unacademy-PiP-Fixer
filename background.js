@@ -1,7 +1,8 @@
 
+
 // Listen for the Alt+C command
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (command === "_execute_action") {
+  if (command === "toggle-pip") {
     runPiPFix(tab);
   }
 });
@@ -54,9 +55,7 @@ const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
 const sidebar = document.getElementById('clx-sidebar');
 
 if (appWrapper) {
-  if (!appWrapper.dataset.customColor) {
-    appWrapper.style.backgroundColor = '#202022'; // Set background to black
-  }
+  appWrapper.style.backgroundColor = '#202022'; // Set background to black
 }
 if (sidebar) {
   sidebar.style.display = 'none'; // Hide the sidebar

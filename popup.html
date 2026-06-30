@@ -1,31 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Unacademy PiP Fixer</title>
-  <link rel="stylesheet" href="popup.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Picker</title>
+    <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <img src="icon48.png" alt="Logo" class="logo">
-      <h2>PiP Fixer</h2>
+    <div class="container">
+        <h2 class="title">Background Color</h2>
+        
+        <div class="color-display-wrapper">
+            <div id="colorPreview" class="color-preview"></div>
+            <span id="hexCode" class="hex-code">#202022</span>
+        </div>
+
+        <div class="controls">
+            <label for="colorPicker" class="picker-label">Change Color:</label>
+            <div class="picker-group">
+                <button id="eyeDropperBtn" class="icon-btn" title="Pick color from screen">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+                </button>
+                <input type="color" id="colorPicker" value="#202022" class="color-picker">
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="applyBtn" class="btn primary-btn">Apply</button>
+            <button id="resetBtn" class="btn secondary-btn">Reset</button>
+        </div>
     </div>
-    
-    <div class="action-group">
-      <button id="toggle-pip" class="btn primary">Toggle PiP Mode</button>
-    </div>
-    
-    <div class="divider"></div>
-    
-    <div class="color-section">
-      <label>Background Color</label>
-      <div class="color-control">
-        <input type="color" id="bg-color-picker" value="#202022">
-        <span id="hex-code" class="hex-display">#202022</span>
-      </div>
-    </div>
-  </div>
-  <script src="popup.js"></script>
+    <script src="popup.js"></script>
 </body>
 </html>
