@@ -9,14 +9,18 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
 // Helper function to execute the script
 function runPiPFix(tab) {
-  chrome.scripting.executeScript({
-    target: { tabId: tab.id, allFrames: true },
-    func: triggerPiP
+  chrome.storage.local.get(['savedColor'], (result) => {
+    const color = result.savedColor || '#202022';
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: triggerPiP,
+      args: [color]
+    });
   });
 }
 
 // The function that runs inside the actual webpage/iframe
-function triggerPiP() {
+function triggerPiP(bgColor) {
   const cameraContainer = document.querySelector('div[class*="RectangleCamera__CameraContainer"]');
   const video = cameraContainer ? cameraContainer.querySelector('video') : null;
   const drawingArea = document.getElementById('drawing-area');
@@ -50,14 +54,14 @@ function triggerPiP() {
     video.dataset.pipListenerAdded = 'true'; 
   }
 
-  // Inside the triggerPiP() function
-const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-const sidebar = document.getElementById('clx-sidebar');
+  // 3. Styling fixes
+  const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+  const sidebar = document.getElementById('clx-sidebar');
 
-if (appWrapper) {
-  appWrapper.style.backgroundColor = '#202022'; // Set background to black
-}
-if (sidebar) {
-  sidebar.style.display = 'none'; // Hide the sidebar
-}
+  if (appWrapper) {
+    appWrapper.style.setProperty('background-color', bgColor, 'important');
+  }
+  if (sidebar) {
+    sidebar.style.display = 'none'; // Hide the sidebar
+  }
 }

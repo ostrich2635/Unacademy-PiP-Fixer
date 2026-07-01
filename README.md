@@ -10,6 +10,7 @@ A lightweight Chrome extension that bypasses Picture-in-Picture (PiP) blocks on 
 * **Custom Background Colors:** An aesthetic new popup interface allows you to fetch the current layout color and apply any custom hex code!
 * **Native Eyedropper Tool:** Pick any color directly from your screen with the dedicated eyedropper button.
 * **Secondary Keyboard Shortcut:** Quickly access the new color popup via a customizable shortcut (default: **Alt+Shift+C**).
+* **Persistent Color Memory:** The extension securely stores your chosen custom background color across sessions and perfectly restores it whenever PiP is reactivated.
 * **Intelligent Canvas Resizing:** When Picture-in-Picture (PiP) is activated, the `drawing-area` container automatically expands to **87% width**, significantly increasing the visible workspace for the whiteboard.
 * **Fully Reversible Layout:** The extension now tracks state changes; pressing **Alt + C** again instantly restores the whiteboard and camera container to their original dimensions.
 

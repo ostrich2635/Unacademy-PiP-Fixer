@@ -3,7 +3,7 @@
   "name": "Unacademy PiP Fixer",
   "version": "1.2.0",
   "description": "Hides the Unacademy camera box and forces native Picture-in-Picture.",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "*://*.uacdn.net/*",
     "*://*.unacademy.com/*"

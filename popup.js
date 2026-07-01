@@ -43,29 +43,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Initialize popup with current color from the page
-    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        if (!tabs || tabs.length === 0) return;
-        
-        chrome.scripting.executeScript({
-            target: {tabId: tabs[0].id, allFrames: true},
-            func: getPageBackgroundColor,
-        }, (results) => {
-            if (chrome.runtime.lastError || !results || !results[0]) {
-                console.error("Error getting background color", chrome.runtime.lastError);
-                return;
-            }
-            
-            let rgbColor = results[0].result;
-            let hex = rgbToHex(rgbColor);
-            
-            if (!hex) {
-                hex = defaultColor; // fallback
-            }
+    // Initialize popup with saved color or fallback to current color from the page
+    chrome.storage.local.get(['savedColor'], (storageResult) => {
+        if (storageResult.savedColor) {
+            updateUI(storageResult.savedColor);
+        } else {
+            chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+                if (!tabs || tabs.length === 0) return;
+                
+                chrome.scripting.executeScript({
+                    target: {tabId: tabs[0].id, allFrames: true},
+                    func: getPageBackgroundColor,
+                }, (results) => {
+                    if (chrome.runtime.lastError || !results || !results[0]) {
+                        console.error("Error getting background color", chrome.runtime.lastError);
+                        return;
+                    }
+                    
+                    let rgbColor = results[0].result;
+                    let hex = rgbToHex(rgbColor);
+                    
+                    if (!hex) {
+                        hex = defaultColor; // fallback
+                    }
 
-            // Update UI
-            updateUI(hex);
-        });
+                    // Update UI
+                    updateUI(hex);
+                });
+            });
+        }
     });
 
     function updateUI(color) {
@@ -99,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // When user clicks Apply
     applyBtn.addEventListener('click', () => {
         const selectedColor = colorPicker.value;
+        chrome.storage.local.set({ savedColor: selectedColor });
         chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
             if (!tabs || tabs.length === 0) return;
             chrome.scripting.executeScript({
@@ -112,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // When user clicks Reset
     resetBtn.addEventListener('click', () => {
         updateUI(defaultColor);
+        chrome.storage.local.set({ savedColor: defaultColor });
         chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
             if (!tabs || tabs.length === 0) return;
             chrome.scripting.executeScript({
