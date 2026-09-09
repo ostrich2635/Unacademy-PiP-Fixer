@@ -48,8 +48,6 @@ function triggerPiP(bgColor, skipPiP) {
       if (sidebar) {
         sidebar.style.display = ''; 
       }
-      let injectedStyle = document.getElementById('pip-fixer-style');
-      if (injectedStyle) injectedStyle.remove();
     } else {
       // Apply layout
       // Maximize drawing area to fill space
@@ -101,8 +99,6 @@ function triggerPiP(bgColor, skipPiP) {
     video.addEventListener('leavepictureinpicture', () => {
       if (cameraContainer) cameraContainer.style.display = ''; 
       if (drawingArea) drawingArea.style.width = ''; 
-      let injectedStyle = document.getElementById('pip-fixer-style');
-      if (injectedStyle) injectedStyle.remove();
     });
     video.dataset.pipListenerAdded = 'true'; 
   }
