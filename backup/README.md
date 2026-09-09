@@ -9,18 +9,16 @@ A lightweight Chrome extension that bypasses Picture-in-Picture (PiP) blocks on 
 * **Privacy First:** Requires no logins, tracks no data, and runs entirely locally in your browser.
 * **Custom Background Colors:** An aesthetic new popup interface allows you to fetch the current layout color and apply any custom hex code!
 * **Native Eyedropper Tool:** Pick any color directly from your screen with the dedicated eyedropper button.
-* **Secondary Keyboard Shortcut:** Quickly access the new layout toggle via a customizable shortcut (default: **Alt+Shift+C**).
+* **Secondary Keyboard Shortcut:** Quickly access the new color popup via a customizable shortcut (default: **Alt+Shift+C**).
 * **Persistent Color Memory:** The extension securely stores your chosen custom background color across sessions and perfectly restores it whenever PiP is reactivated.
-* **Layout Toggle Mode:** Pressing **Alt+Shift+C** applies your custom background color and maximizes the whiteboard space without pushing the video into PiP mode.
-* **Cleaner UI:** Automatically strips away distracting box-shadows from the Unacademy interface for a cleaner viewing experience.
-* **Intelligent Canvas Resizing:** When Picture-in-Picture (PiP) is activated, the `drawing-area` container automatically expands to **82% width**, significantly increasing the visible workspace for the whiteboard.
-* **Fully Reversible Layout:** The extension now tracks state changes; pressing **Alt + C** (or **Alt+Shift+C**) again instantly restores the whiteboard and camera container to their original dimensions.
+* **Intelligent Canvas Resizing:** When Picture-in-Picture (PiP) is activated, the `drawing-area` container automatically expands to **87% width**, significantly increasing the visible workspace for the whiteboard.
+* **Fully Reversible Layout:** The extension now tracks state changes; pressing **Alt + C** again instantly restores the whiteboard and camera container to their original dimensions.
 
 ## 🚀 Installation
 
 Since this extension is not currently on the Chrome Web Store, you can install it manually in just a few seconds:
 
-1. **Download the code:** Download `Unacademy-PiP-Fixer_v1.3.0.zip` from the [release page](https://github.com/ostrich2635/Unacademy-PiP-Fixer/releases) and extract it to a folder on your computer.
+1. **Download the code:** Download it from the [release page](https://github.com/ostrich2635/Unacademy-PiP-Fixer/releases) and extract it to a folder on your computer.
 2. **Open Extensions:** Open Google Chrome and type `chrome://extensions/` into your address bar.
 3. **Enable Developer Mode:** Toggle the **Developer mode** switch in the top-right corner of the page.
 4. **Load the Extension:** Click the **Load unpacked** button in the top-left corner and select the folder where you extracted the code.

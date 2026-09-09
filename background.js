@@ -1,38 +1,91 @@
 
-
-// Listen for the Alt+C command
+// Listen for commands
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === "toggle-pip") {
-    runPiPFix(tab);
+    runPiPFix(tab, false);
+  } else if (command === "toggle-layout") {
+    runPiPFix(tab, true);
   }
 });
 
 // Helper function to execute the script
-function runPiPFix(tab) {
+function runPiPFix(tab, skipPiP) {
   chrome.storage.local.get(['savedColor'], (result) => {
     const color = result.savedColor || '#202022';
     chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: triggerPiP,
-      args: [color]
+      args: [color, skipPiP]
     });
   });
 }
 
 // The function that runs inside the actual webpage/iframe
-function triggerPiP(bgColor) {
-  const cameraContainer = document.querySelector('div[class*="RectangleCamera__CameraContainer"]');
+function triggerPiP(bgColor, skipPiP) {
+  const cameraContainer = document.querySelector('div[class*="CameraContainer"]');
   const video = cameraContainer ? cameraContainer.querySelector('video') : null;
   const drawingArea = document.getElementById('drawing-area');
+  const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+  const sidebar = document.getElementById('clx-sidebar');
+
+  if (skipPiP) {
+    // Manual layout toggle without PiP
+    if (appWrapper && appWrapper.dataset.layoutToggled === 'true') {
+      // Revert layout
+      if (drawingArea) {
+        drawingArea.style.width = '';
+        drawingArea.style.height = '';
+        drawingArea.style.maxWidth = '';
+        drawingArea.style.maxHeight = '';
+        drawingArea.style.display = '';
+        drawingArea.style.justifyContent = '';
+        drawingArea.style.alignItems = '';
+      }
+      if (appWrapper) {
+        appWrapper.style.removeProperty('background-color');
+        delete appWrapper.dataset.layoutToggled;
+      }
+      if (sidebar) {
+        sidebar.style.display = ''; 
+      }
+      let injectedStyle = document.getElementById('pip-fixer-style');
+      if (injectedStyle) injectedStyle.remove();
+    } else {
+      // Apply layout
+      // Maximize drawing area to fill space
+      if (drawingArea) {
+        drawingArea.style.width = '100vw';
+        drawingArea.style.height = '100vh';
+        drawingArea.style.maxWidth = '100%';
+        drawingArea.style.maxHeight = '100%';
+        drawingArea.style.display = 'flex';
+        drawingArea.style.justifyContent = 'center';
+        drawingArea.style.alignItems = 'center';
+      }
+      
+      if (appWrapper) {
+        appWrapper.style.setProperty('background-color', bgColor, 'important');
+        appWrapper.dataset.layoutToggled = 'true';
+      }
+      if (sidebar) {
+        sidebar.style.display = 'none'; 
+      }
+      if (!document.getElementById('pip-fixer-style')) {
+        let style = document.createElement('style');
+        style.id = 'pip-fixer-style';
+        style.innerHTML = `*, *::before, *::after { box-shadow: none !important; }`;
+        document.head.appendChild(style);
+      }
+    }
+    return;
+  }
 
   if (!video) return;
 
-  // 1. Toggle Logic
+  // 1. Toggle Logic for PiP
   if (document.pictureInPictureElement) {
-    // If already in PiP, exit PiP (the event listener below will handle the layout reset)
     document.exitPictureInPicture().catch(err => console.error(err));
   } else {
-    // If not in PiP, enter PiP and modify layout
     video.removeAttribute('disablePictureInPicture');
     video.requestPictureInPicture().then(() => {
       if (cameraContainer) cameraContainer.style.display = 'none';
@@ -43,25 +96,28 @@ function triggerPiP(bgColor) {
     });
   }
 
-  // 2. Cleanup Event Listener (triggers when PiP is closed via shortcut OR the native 'X' button)
+  // 2. Cleanup Event Listener
   if (!video.dataset.pipListenerAdded) {
     video.addEventListener('leavepictureinpicture', () => {
-      // Revert styles to their original CSS state
       if (cameraContainer) cameraContainer.style.display = ''; 
       if (drawingArea) drawingArea.style.width = ''; 
+      let injectedStyle = document.getElementById('pip-fixer-style');
+      if (injectedStyle) injectedStyle.remove();
     });
-    // Mark that we've added the listener so we don't attach multiple copies
     video.dataset.pipListenerAdded = 'true'; 
   }
 
   // 3. Styling fixes
-  const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-  const sidebar = document.getElementById('clx-sidebar');
-
   if (appWrapper) {
     appWrapper.style.setProperty('background-color', bgColor, 'important');
   }
   if (sidebar) {
-    sidebar.style.display = 'none'; // Hide the sidebar
+    sidebar.style.display = 'none';
+  }
+  if (!document.getElementById('pip-fixer-style')) {
+    let style = document.createElement('style');
+    style.id = 'pip-fixer-style';
+    style.innerHTML = `*, *::before, *::after { box-shadow: none !important; }`;
+    document.head.appendChild(style);
   }
 }

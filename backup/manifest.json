@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Unacademy PiP Fixer",
-  "version": "1.3.0",
+  "version": "1.2.0",
   "description": "Hides the Unacademy camera box and forces native Picture-in-Picture.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
@@ -29,11 +29,11 @@
       },
       "description": "Activate Picture-in-Picture"
     },
-    "toggle-layout": {
+    "_execute_action": {
       "suggested_key": {
         "default": "Alt+Shift+C"
       },
-      "description": "Toggle Layout without PiP"
+      "description": "Open Color Picker Popup"
     }
   }
 }
