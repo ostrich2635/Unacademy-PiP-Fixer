@@ -49,54 +49,46 @@ function startLiveSampler() {
     }
 
     function getColorAtPoint(x, y) {
-        // Find the best canvas — the largest one that contains the click point
+        // Unacademy stacks multiple canvases (content + drawing overlay).
+        // The drawing canvas is mostly black/transparent, so we try ALL canvases
+        // and prefer the one that gives a non-black color.
         const allCanvases = document.querySelectorAll('canvas');
-        let bestCanvas = null;
-        let bestArea = 0;
+        let results = [];
 
         for (const c of allCanvases) {
-            const rect = c.getBoundingClientRect();
-            // Check if the click point is inside this canvas's bounding box
-            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-                const area = rect.width * rect.height;
-                if (area > bestArea) {
-                    bestArea = area;
-                    bestCanvas = c;
-                }
-            }
-        }
-
-        // If no canvas contains the point, try the largest canvas in the frame
-        if (!bestCanvas && allCanvases.length > 0) {
-            for (const c of allCanvases) {
-                const rect = c.getBoundingClientRect();
-                const area = rect.width * rect.height;
-                if (area > bestArea) {
-                    bestArea = area;
-                    bestCanvas = c;
-                }
-            }
-        }
-
-        if (bestCanvas) {
             try {
-                const rect = bestCanvas.getBoundingClientRect();
-                const scaleX = bestCanvas.width / rect.width;
-                const scaleY = bestCanvas.height / rect.height;
+                const rect = c.getBoundingClientRect();
+                const scaleX = c.width / rect.width;
+                const scaleY = c.height / rect.height;
                 const cx = Math.round((x - rect.left) * scaleX);
                 const cy = Math.round((y - rect.top) * scaleY);
-                // Clamp to canvas bounds
-                const clampedX = Math.max(0, Math.min(cx, bestCanvas.width - 1));
-                const clampedY = Math.max(0, Math.min(cy, bestCanvas.height - 1));
-                const ctx = bestCanvas.getContext('2d');
+                const clampedX = Math.max(0, Math.min(cx, c.width - 1));
+                const clampedY = Math.max(0, Math.min(cy, c.height - 1));
+                const ctx = c.getContext('2d');
                 const pixel = ctx.getImageData(clampedX, clampedY, 1, 1).data;
-                return { hex: rgbaToHex(pixel[0], pixel[1], pixel[2]), canvas: bestCanvas, cx: clampedX, cy: clampedY };
+                const hex = rgbaToHex(pixel[0], pixel[1], pixel[2]);
+                const brightness = pixel[0] + pixel[1] + pixel[2];
+                results.push({ hex, canvas: c, cx: clampedX, cy: clampedY, brightness, alpha: pixel[3] });
             } catch (e) {
-                // Canvas tainted — fall through to CSS fallback
+                // Canvas tainted, skip
             }
         }
 
-        // Fallback: read CSS background-color of whatever element is at the point
+        if (results.length > 0) {
+            // Prefer canvas with highest brightness (non-black) and non-transparent
+            // Sort: opaque + bright first, transparent/black last
+            results.sort((a, b) => {
+                // Strongly prefer non-black (brightness > 15)
+                const aUseful = a.brightness > 15 && a.alpha > 128 ? 1 : 0;
+                const bUseful = b.brightness > 15 && b.alpha > 128 ? 1 : 0;
+                if (aUseful !== bUseful) return bUseful - aUseful;
+                // Among equals, prefer brighter
+                return b.brightness - a.brightness;
+            });
+            return results[0];
+        }
+
+        // Fallback: read CSS background-color
         overlay.style.pointerEvents = 'none';
         const el = document.elementFromPoint(x, y);
         overlay.style.pointerEvents = '';
