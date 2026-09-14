@@ -6,7 +6,8 @@ function startLiveSampler() {
     // --- Create overlay covering the entire viewport ---
     const overlay = document.createElement('div');
     overlay.id = 'pip-sampler-overlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;cursor:crosshair;';
+    // Added rgba(0,0,0,0.15) so the user gets visual feedback that sampling started
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;cursor:crosshair;background:rgba(0,0,0,0.15);';
 
     // --- Create tooltip ---
     const tooltip = document.createElement('div');
@@ -282,9 +283,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     chrome.scripting.executeScript({
                         target: { tabId: tabs[0].id, allFrames: false },
                         func: startLiveSampler
-                    }).catch(() => {});
-                    // Close popup immediately so the user can interact with the page
-                    window.close();
+                    }).then(() => {
+                        // Close popup AFTER script is injected
+                        window.close();
+                    }).catch((err) => {
+                        console.error("Injection failed:", err);
+                    });
                 });
             }
         });

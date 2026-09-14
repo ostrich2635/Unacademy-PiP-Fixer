@@ -21,7 +21,12 @@ function stopTracking() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'request-screenshot') {
         chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, (dataUrl) => {
-            sendResponse({ dataUrl });
+            if (chrome.runtime.lastError) {
+                console.error("Screenshot failed:", chrome.runtime.lastError.message);
+                sendResponse({ dataUrl: null });
+            } else {
+                sendResponse({ dataUrl });
+            }
         });
         return true; // Keep channel open for async response
         
@@ -42,7 +47,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 
                 // Screenshot the entire visual tab viewport
                 const dataUrl = await new Promise(resolve => {
-                    chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 10 }, resolve);
+                    chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 10 }, (res) => {
+                        if (chrome.runtime.lastError) resolve(null);
+                        else resolve(res);
+                    });
                 });
                 if (!dataUrl) return;
 
