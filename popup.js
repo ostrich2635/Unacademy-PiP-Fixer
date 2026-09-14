@@ -29,14 +29,13 @@ function startLiveSampler() {
     if (document.getElementById('pip-sampler-overlay')) return;
 
     let samplerActive = true;
-    let trackingX = 0;
-    let trackingY = 0;
+    let trackingRelX = 0;
+    let trackingRelY = 0;
     let lastColor = '';
     let lastSrc = '';
     let cachedCanvas = null;
     let cachedCtx = null;
     let pollInterval = null;
-    let observer = null;
 
     // --- Create overlay ---
     const overlay = document.createElement('div');
@@ -58,10 +57,6 @@ function startLiveSampler() {
     tooltip.appendChild(hexText);
     document.body.appendChild(overlay);
     document.body.appendChild(tooltip);
-
-    function rgbaToHex(r, g, b) {
-        return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-    }
 
     let loadingSrc = '';
 
@@ -94,35 +89,66 @@ function startLiveSampler() {
         newImg.src = currentSrc;
     }
 
-    // Read pixel from cached canvas at client coordinates
-    function getPixelAt(clientX, clientY) {
-        if (!cachedCanvas || !cachedCtx) return null;
-
-        const rect = slideImg.getBoundingClientRect();
-        const scaleX = cachedCanvas.width / rect.width;
-        const scaleY = cachedCanvas.height / rect.height;
-        const cx = Math.round((clientX - rect.left) * scaleX);
-        const cy = Math.round((clientY - rect.top) * scaleY);
-        const clampedX = Math.max(0, Math.min(cx, cachedCanvas.width - 1));
-        const clampedY = Math.max(0, Math.min(cy, cachedCanvas.height - 1));
-
+    // Helper: Average color in an 11x11 box to ignore WebP artifacts and text edges
+    function getAverageColor(cx, cy) {
         try {
-            const pixel = cachedCtx.getImageData(clampedX, clampedY, 1, 1).data;
-            return { hex: rgbaToHex(pixel[0], pixel[1], pixel[2]), cx: clampedX, cy: clampedY };
+            const size = 11;
+            const startX = Math.max(0, cx - Math.floor(size/2));
+            const startY = Math.max(0, cy - Math.floor(size/2));
+            const width = Math.min(size, cachedCanvas.width - startX);
+            const height = Math.min(size, cachedCanvas.height - startY);
+            
+            const imgData = cachedCtx.getImageData(startX, startY, width, height).data;
+            let r = 0, g = 0, b = 0, count = 0;
+            
+            for (let i = 0; i < imgData.length; i += 4) {
+                // Ignore transparent pixels
+                if (imgData[i+3] > 128) {
+                    r += imgData[i];
+                    g += imgData[i+1];
+                    b += imgData[i+2];
+                    count++;
+                }
+            }
+            if (count === 0) return null;
+            
+            r = Math.round(r / count);
+            g = Math.round(g / count);
+            b = Math.round(b / count);
+            
+            return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
         } catch (e) {
             return null;
         }
     }
 
-    // Read pixel from cached canvas at stored image coordinates
+    // Read pixel from cached canvas at client coordinates
+    function getPixelAt(clientX, clientY) {
+        if (!cachedCanvas || !cachedCtx) return null;
+
+        const rect = slideImg.getBoundingClientRect();
+        
+        // Calculate relative position (0.0 to 1.0) to survive slide resolution changes
+        const relX = (clientX - rect.left) / rect.width;
+        const relY = (clientY - rect.top) / rect.height;
+        
+        if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
+
+        const cx = Math.floor(relX * cachedCanvas.width);
+        const cy = Math.floor(relY * cachedCanvas.height);
+
+        const hex = getAverageColor(cx, cy);
+        if (!hex) return null;
+        
+        return { hex, relX, relY };
+    }
+
+    // Read pixel from cached canvas at stored relative coordinates
     function readTrackedPixel() {
         if (!cachedCanvas || !cachedCtx) return null;
-        try {
-            const pixel = cachedCtx.getImageData(trackingX, trackingY, 1, 1).data;
-            return rgbaToHex(pixel[0], pixel[1], pixel[2]);
-        } catch (e) {
-            return null;
-        }
+        const cx = Math.floor(trackingRelX * cachedCanvas.width);
+        const cy = Math.floor(trackingRelY * cachedCanvas.height);
+        return getAverageColor(cx, cy);
     }
 
     function applyColor(hex) {
@@ -165,8 +191,8 @@ function startLiveSampler() {
         }
 
         // Lock coordinates
-        trackingX = result.cx;
-        trackingY = result.cy;
+        trackingRelX = result.relX;
+        trackingRelY = result.relY;
 
         // Remove selection UI
         overlay.remove();
@@ -192,7 +218,7 @@ function startLiveSampler() {
     document.addEventListener('keydown', escHandler);
 
     function startTracking() {
-        // Poll frequently (500ms) instead of MutationObserver
+        // Poll frequently (200ms) instead of MutationObserver
         // React destroys and recreates <img> tags on scrubs, breaking observers
         pollInterval = setInterval(() => {
             if (!samplerActive) return;
@@ -233,7 +259,7 @@ function startLiveSampler() {
                     applyColor(hex);
                 }
             }
-        }, 500); // 500ms polling handles scrubs smoothly and reliably
+        }, 200); // 200ms polling handles scrubs smoothly and reliably
     }
 
     function cleanup() {
