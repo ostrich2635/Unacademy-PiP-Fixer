@@ -1,4 +1,43 @@
 
+// ===== Live Sampler message relay =====
+let colorSaveTimeout = null;
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'sampler-started') {
+    chrome.storage.local.set({ samplerActive: true });
+  } else if (msg.type === 'sampler-stopped') {
+    chrome.storage.local.set({ samplerActive: false });
+  } else if (msg.type === 'sampler-color-update') {
+    // Debounce storage saves (max once per second)
+    if (colorSaveTimeout) clearTimeout(colorSaveTimeout);
+    colorSaveTimeout = setTimeout(() => {
+      chrome.storage.local.set({ savedColor: msg.color });
+    }, 1000);
+
+    // Apply color to the top frame immediately
+    if (sender.tab) {
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id, allFrames: true },
+        func: (color) => {
+          const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+          if (appWrapper) {
+            appWrapper.style.setProperty('background-color', color, 'important');
+          }
+        },
+        args: [msg.color]
+      });
+    }
+  } else if (msg.type === 'stop-sampler-from-popup') {
+    // Forward stop command to the active tab's content scripts
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'stop-sampler' });
+      }
+    });
+    chrome.storage.local.set({ samplerActive: false });
+  }
+});
+
 // Listen for commands
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === "toggle-pip") {
