@@ -1,10 +1,22 @@
 // Standalone sampler function — injected into the page via executeScript
 // Must have ZERO closures or references to popup.js variables
 function startLiveSampler() {
-    // Only activate in frames that have a canvas (the whiteboard)
-    const canvases = document.querySelectorAll('canvas');
-    if (canvases.length === 0) {
-        // No canvas — just listen for stop command so cleanup works
+    // Find the slide image (largest img in the frame — the rendered PDF slide)
+    const imgs = document.querySelectorAll('img');
+    let slideImg = null;
+    let maxArea = 0;
+
+    for (const img of imgs) {
+        const rect = img.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        if (area > maxArea && area > 10000) {
+            maxArea = area;
+            slideImg = img;
+        }
+    }
+
+    if (!slideImg) {
+        // No slide image in this frame — just listen for stop command
         chrome.runtime.onMessage.addListener(function handler(msg) {
             if (msg.type === 'stop-sampler') {
                 chrome.runtime.onMessage.removeListener(handler);
@@ -17,18 +29,21 @@ function startLiveSampler() {
     if (document.getElementById('pip-sampler-overlay')) return;
 
     let samplerActive = true;
-    let trackingCanvas = null;
     let trackingX = 0;
     let trackingY = 0;
     let lastColor = '';
-    let animFrameId = null;
+    let lastSrc = '';
+    let cachedCanvas = null;
+    let cachedCtx = null;
+    let pollInterval = null;
+    let observer = null;
 
-    // --- Create overlay (crosshair cursor, captures clicks) ---
+    // --- Create overlay ---
     const overlay = document.createElement('div');
     overlay.id = 'pip-sampler-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;cursor:crosshair;';
 
-    // --- Create floating tooltip ---
+    // --- Create tooltip ---
     const tooltip = document.createElement('div');
     tooltip.id = 'pip-sampler-tooltip';
     tooltip.style.cssText = 'position:fixed;pointer-events:none;z-index:1000000;background:#1a1a1c;color:#f0f0f0;padding:6px 10px;border-radius:8px;font-family:monospace;font-size:12px;display:flex;align-items:center;gap:8px;border:1px solid #3f3f46;box-shadow:0 4px 12px rgba(0,0,0,0.4);';
@@ -37,7 +52,7 @@ function startLiveSampler() {
     swatch.style.cssText = 'width:16px;height:16px;border-radius:50%;border:1px solid #3f3f46;flex-shrink:0;';
 
     const hexText = document.createElement('span');
-    hexText.textContent = 'Click on whiteboard';
+    hexText.textContent = 'Loading slide...';
 
     tooltip.appendChild(swatch);
     tooltip.appendChild(hexText);
@@ -48,59 +63,74 @@ function startLiveSampler() {
         return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
     }
 
-    function getColorAtPoint(x, y) {
-        // Unacademy stacks multiple canvases (content + drawing overlay).
-        // The drawing canvas is mostly black/transparent, so we try ALL canvases
-        // and prefer the one that gives a non-black color.
-        const allCanvases = document.querySelectorAll('canvas');
-        let results = [];
-
-        for (const c of allCanvases) {
-            try {
-                const rect = c.getBoundingClientRect();
-                const scaleX = c.width / rect.width;
-                const scaleY = c.height / rect.height;
-                const cx = Math.round((x - rect.left) * scaleX);
-                const cy = Math.round((y - rect.top) * scaleY);
-                const clampedX = Math.max(0, Math.min(cx, c.width - 1));
-                const clampedY = Math.max(0, Math.min(cy, c.height - 1));
-                const ctx = c.getContext('2d');
-                const pixel = ctx.getImageData(clampedX, clampedY, 1, 1).data;
-                const hex = rgbaToHex(pixel[0], pixel[1], pixel[2]);
-                const brightness = pixel[0] + pixel[1] + pixel[2];
-                results.push({ hex, canvas: c, cx: clampedX, cy: clampedY, brightness, alpha: pixel[3] });
-            } catch (e) {
-                // Canvas tainted, skip
-            }
+    // Load the slide image with CORS so we can read pixels
+    function loadSlideImage(callback) {
+        const currentSrc = slideImg.src;
+        if (currentSrc === lastSrc && cachedCanvas) {
+            callback(true);
+            return;
         }
 
-        if (results.length > 0) {
-            // Prefer canvas with highest brightness (non-black) and non-transparent
-            // Sort: opaque + bright first, transparent/black last
-            results.sort((a, b) => {
-                // Strongly prefer non-black (brightness > 15)
-                const aUseful = a.brightness > 15 && a.alpha > 128 ? 1 : 0;
-                const bUseful = b.brightness > 15 && b.alpha > 128 ? 1 : 0;
-                if (aUseful !== bUseful) return bUseful - aUseful;
-                // Among equals, prefer brighter
-                return b.brightness - a.brightness;
-            });
-            return results[0];
-        }
-
-        // Fallback: read CSS background-color
-        overlay.style.pointerEvents = 'none';
-        const el = document.elementFromPoint(x, y);
-        overlay.style.pointerEvents = '';
-        if (el) {
-            const bg = window.getComputedStyle(el).backgroundColor;
-            const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-            if (match) {
-                return { hex: rgbaToHex(parseInt(match[1]), parseInt(match[2]), parseInt(match[3])), canvas: null };
-            }
-        }
-        return { hex: '#000000', canvas: null };
+        const newImg = new Image();
+        newImg.crossOrigin = 'anonymous';
+        newImg.onload = () => {
+            cachedCanvas = document.createElement('canvas');
+            cachedCanvas.width = newImg.naturalWidth;
+            cachedCanvas.height = newImg.naturalHeight;
+            cachedCtx = cachedCanvas.getContext('2d');
+            cachedCtx.drawImage(newImg, 0, 0);
+            lastSrc = currentSrc;
+            callback(true);
+        };
+        newImg.onerror = () => callback(false);
+        newImg.src = currentSrc;
     }
+
+    // Read pixel from cached canvas at client coordinates
+    function getPixelAt(clientX, clientY) {
+        if (!cachedCanvas || !cachedCtx) return null;
+
+        const rect = slideImg.getBoundingClientRect();
+        const scaleX = cachedCanvas.width / rect.width;
+        const scaleY = cachedCanvas.height / rect.height;
+        const cx = Math.round((clientX - rect.left) * scaleX);
+        const cy = Math.round((clientY - rect.top) * scaleY);
+        const clampedX = Math.max(0, Math.min(cx, cachedCanvas.width - 1));
+        const clampedY = Math.max(0, Math.min(cy, cachedCanvas.height - 1));
+
+        try {
+            const pixel = cachedCtx.getImageData(clampedX, clampedY, 1, 1).data;
+            return { hex: rgbaToHex(pixel[0], pixel[1], pixel[2]), cx: clampedX, cy: clampedY };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // Read pixel from cached canvas at stored image coordinates
+    function readTrackedPixel() {
+        if (!cachedCanvas || !cachedCtx) return null;
+        try {
+            const pixel = cachedCtx.getImageData(trackingX, trackingY, 1, 1).data;
+            return rgbaToHex(pixel[0], pixel[1], pixel[2]);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function applyColor(hex) {
+        if (!hex || hex === lastColor) return;
+        lastColor = hex;
+        const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+        if (appWrapper) {
+            appWrapper.style.setProperty('background-color', hex, 'important');
+        }
+        chrome.runtime.sendMessage({ type: 'sampler-color-update', color: hex });
+    }
+
+    // Initial load of slide image
+    loadSlideImage((ok) => {
+        hexText.textContent = ok ? 'Click to track a pixel' : 'Failed to load slide';
+    });
 
     // ===== PHASE 1: Pixel selection =====
 
@@ -108,35 +138,34 @@ function startLiveSampler() {
         tooltip.style.left = (e.clientX + 16) + 'px';
         tooltip.style.top = (e.clientY + 16) + 'px';
 
-        const result = getColorAtPoint(e.clientX, e.clientY);
-        swatch.style.backgroundColor = result.hex;
-        hexText.textContent = result.hex.toUpperCase();
+        const result = getPixelAt(e.clientX, e.clientY);
+        if (result) {
+            swatch.style.backgroundColor = result.hex;
+            hexText.textContent = result.hex.toUpperCase();
+        }
     });
 
     overlay.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
 
-        const result = getColorAtPoint(e.clientX, e.clientY);
-
-        if (!result.canvas) {
-            hexText.textContent = '\u26a0 Click on whiteboard!';
-            swatch.style.backgroundColor = '#ff4444';
-            setTimeout(() => {
-                hexText.textContent = 'Click on whiteboard';
-                swatch.style.backgroundColor = '';
-            }, 1500);
+        const result = getPixelAt(e.clientX, e.clientY);
+        if (!result) {
+            hexText.textContent = '\u26a0 Try again!';
+            setTimeout(() => { hexText.textContent = 'Click to track'; }, 1500);
             return;
         }
 
         // Lock coordinates
-        trackingCanvas = result.canvas;
         trackingX = result.cx;
         trackingY = result.cy;
 
         // Remove selection UI
         overlay.remove();
         tooltip.remove();
+
+        // Apply initial color
+        applyColor(result.hex);
 
         // Notify background
         chrome.runtime.sendMessage({ type: 'sampler-started' });
@@ -145,7 +174,7 @@ function startLiveSampler() {
         startTracking();
     });
 
-    // Escape to cancel (works in both phases)
+    // Escape to cancel
     function escHandler(e) {
         if (e.key === 'Escape') {
             cleanup();
@@ -155,36 +184,35 @@ function startLiveSampler() {
     document.addEventListener('keydown', escHandler);
 
     function startTracking() {
-        function track() {
-            if (!samplerActive || !trackingCanvas) return;
-
-            try {
-                const ctx = trackingCanvas.getContext('2d');
-                const pixel = ctx.getImageData(trackingX, trackingY, 1, 1).data;
-                const hex = rgbaToHex(pixel[0], pixel[1], pixel[2]);
-
-                if (hex !== lastColor) {
-                    lastColor = hex;
-                    // Update locally (catches App__Wrapper if it's in this frame)
-                    const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-                    if (appWrapper) {
-                        appWrapper.style.setProperty('background-color', hex, 'important');
-                    }
-                    // Send to background to relay to top frame + save
-                    chrome.runtime.sendMessage({ type: 'sampler-color-update', color: hex });
+        // Watch for slide changes (img src attribute changes)
+        observer = new MutationObserver(() => {
+            loadSlideImage((ok) => {
+                if (ok) {
+                    const hex = readTrackedPixel();
+                    applyColor(hex);
                 }
-            } catch (e) {
-                // Canvas removed or tainted — stop gracefully
-            }
+            });
+        });
+        observer.observe(slideImg, { attributes: true, attributeFilter: ['src'] });
 
-            animFrameId = requestAnimationFrame(track);
-        }
-        animFrameId = requestAnimationFrame(track);
+        // Also poll every second as backup
+        pollInterval = setInterval(() => {
+            if (!samplerActive) return;
+            if (slideImg.src !== lastSrc) {
+                loadSlideImage((ok) => {
+                    if (ok) {
+                        const hex = readTrackedPixel();
+                        applyColor(hex);
+                    }
+                });
+            }
+        }, 1000);
     }
 
     function cleanup() {
         samplerActive = false;
-        if (animFrameId) cancelAnimationFrame(animFrameId);
+        if (pollInterval) clearInterval(pollInterval);
+        if (observer) observer.disconnect();
         const o = document.getElementById('pip-sampler-overlay');
         if (o) o.remove();
         const t = document.getElementById('pip-sampler-tooltip');
