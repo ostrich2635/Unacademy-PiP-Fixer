@@ -85,7 +85,10 @@ function startLiveSampler() {
             lastSrc = currentSrc;
             callback(true);
         };
-        newImg.onerror = () => callback(false);
+        newImg.onerror = () => {
+            loadingSrc = '';
+            callback(false);
+        };
         newImg.src = currentSrc;
     }
 
@@ -223,12 +226,13 @@ function startLiveSampler() {
         pollInterval = setInterval(() => {
             if (!samplerActive) return;
 
-            // 1. Re-find the active slide image
+            // 1. Re-find the active slide image (iterate backwards to get the top-most/newest image)
             const imgs = document.querySelectorAll('img');
             let currentSlideImg = null;
             let maxArea = 0;
 
-            for (const img of imgs) {
+            for (let i = imgs.length - 1; i >= 0; i--) {
+                const img = imgs[i];
                 const rect = img.getBoundingClientRect();
                 const area = rect.width * rect.height;
                 // Only consider large images that are actually visible
