@@ -63,17 +63,25 @@ function startLiveSampler() {
         return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
     }
 
+    let loadingSrc = '';
+
     // Load the slide image with CORS so we can read pixels
     function loadSlideImage(callback) {
+        if (!slideImg) return;
         const currentSrc = slideImg.src;
         if (currentSrc === lastSrc && cachedCanvas) {
             callback(true);
             return;
         }
+        if (currentSrc === loadingSrc) {
+            return; // Already loading
+        }
 
+        loadingSrc = currentSrc;
         const newImg = new Image();
         newImg.crossOrigin = 'anonymous';
         newImg.onload = () => {
+            if (loadingSrc !== currentSrc) return; // Stale load
             cachedCanvas = document.createElement('canvas');
             cachedCanvas.width = newImg.naturalWidth;
             cachedCanvas.height = newImg.naturalHeight;
@@ -184,29 +192,48 @@ function startLiveSampler() {
     document.addEventListener('keydown', escHandler);
 
     function startTracking() {
-        // Watch for slide changes (img src attribute changes)
-        observer = new MutationObserver(() => {
-            loadSlideImage((ok) => {
-                if (ok) {
+        // Poll frequently (500ms) instead of MutationObserver
+        // React destroys and recreates <img> tags on scrubs, breaking observers
+        pollInterval = setInterval(() => {
+            if (!samplerActive) return;
+
+            // 1. Re-find the active slide image
+            const imgs = document.querySelectorAll('img');
+            let currentSlideImg = null;
+            let maxArea = 0;
+
+            for (const img of imgs) {
+                const rect = img.getBoundingClientRect();
+                const area = rect.width * rect.height;
+                // Only consider large images that are actually visible
+                if (area > maxArea && area > 10000 && rect.width > 0 && rect.height > 0) {
+                    const style = window.getComputedStyle(img);
+                    if (style.opacity !== '0' && style.display !== 'none' && style.visibility !== 'hidden') {
+                        maxArea = area;
+                        currentSlideImg = img;
+                    }
+                }
+            }
+
+            if (currentSlideImg) {
+                slideImg = currentSlideImg; // Update global reference
+                
+                // 2. If src changed (e.g. video scrubbed or slide changed), trigger reload
+                if (slideImg.src !== lastSrc) {
+                    loadSlideImage((ok) => {
+                        if (ok) {
+                            const hex = readTrackedPixel();
+                            applyColor(hex);
+                        }
+                    });
+                } else if (cachedCanvas) {
+                    // 3. Even if src didn't change, re-apply color continuously
+                    // In case App__Wrapper was re-rendered by React and lost our inline style
                     const hex = readTrackedPixel();
                     applyColor(hex);
                 }
-            });
-        });
-        observer.observe(slideImg, { attributes: true, attributeFilter: ['src'] });
-
-        // Also poll every second as backup
-        pollInterval = setInterval(() => {
-            if (!samplerActive) return;
-            if (slideImg.src !== lastSrc) {
-                loadSlideImage((ok) => {
-                    if (ok) {
-                        const hex = readTrackedPixel();
-                        applyColor(hex);
-                    }
-                });
             }
-        }, 1000);
+        }, 500); // 500ms polling handles scrubs smoothly and reliably
     }
 
     function cleanup() {
