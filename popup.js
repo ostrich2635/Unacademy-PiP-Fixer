@@ -124,7 +124,7 @@ function startLiveSampler() {
         if (appWrapper) {
             appWrapper.style.setProperty('background-color', hex, 'important');
         }
-        chrome.runtime.sendMessage({ type: 'sampler-color-update', color: hex });
+        chrome.runtime.sendMessage({ type: 'sampler-color-update', color: hex }).catch(() => {});
     }
 
     // Initial load of slide image
@@ -168,7 +168,7 @@ function startLiveSampler() {
         applyColor(result.hex);
 
         // Notify background
-        chrome.runtime.sendMessage({ type: 'sampler-started' });
+        chrome.runtime.sendMessage({ type: 'sampler-started' }).catch(() => {});
 
         // ===== PHASE 2: Continuous tracking =====
         startTracking();
@@ -217,7 +217,7 @@ function startLiveSampler() {
         if (o) o.remove();
         const t = document.getElementById('pip-sampler-tooltip');
         if (t) t.remove();
-        chrome.runtime.sendMessage({ type: 'sampler-stopped' });
+        chrome.runtime.sendMessage({ type: 'sampler-stopped' }).catch(() => {});
     }
 
     // Listen for stop command from popup/background
@@ -377,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.get(['samplerActive'], (result) => {
             if (result.samplerActive) {
                 // Stop the sampler
-                chrome.runtime.sendMessage({ type: 'stop-sampler-from-popup' });
+                chrome.runtime.sendMessage({ type: 'stop-sampler-from-popup' }).catch(() => {});
                 liveSamplerBtn.textContent = '\ud83c\udfaf Live Sample';
                 liveSamplerBtn.classList.remove('sampler-active');
             } else {

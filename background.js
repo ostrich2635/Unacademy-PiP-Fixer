@@ -25,17 +25,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         },
         args: [msg.color]
-      });
+      }).catch(() => {});
     }
   } else if (msg.type === 'stop-sampler-from-popup') {
     // Forward stop command to the active tab's content scripts
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'stop-sampler' });
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'stop-sampler' }).catch(() => {});
       }
     });
     chrome.storage.local.set({ samplerActive: false });
   }
+  return true; // Keep message channel open
 });
 
 // Listen for commands
