@@ -1,99 +1,56 @@
-// Standalone sampler function — injected into the page via executeScript
+// Standalone sampler function — injected into the TOP PAGE via executeScript
 // Must have ZERO closures or references to popup.js variables
 function startLiveSampler() {
-    // Find the slide image (largest img in the frame — the rendered PDF slide)
-    const imgs = document.querySelectorAll('img');
-    let slideImg = null;
-    let maxArea = 0;
-
-    for (const img of imgs) {
-        const rect = img.getBoundingClientRect();
-        const area = rect.width * rect.height;
-        if (area > maxArea && area > 10000) {
-            maxArea = area;
-            slideImg = img;
-        }
-    }
-
-    if (!slideImg) {
-        // No slide image in this frame — just listen for stop command
-        chrome.runtime.onMessage.addListener(function handler(msg) {
-            if (msg.type === 'stop-sampler') {
-                chrome.runtime.onMessage.removeListener(handler);
-            }
-        });
-        return;
-    }
-
-    // Prevent duplicate sampler
     if (document.getElementById('pip-sampler-overlay')) return;
 
-    let samplerActive = true;
-    let trackingRelX = 0;
-    let trackingRelY = 0;
-    let lastColor = '';
-    let lastSrc = '';
-    let cachedCanvas = null;
-    let cachedCtx = null;
-    let pollInterval = null;
-
-    // --- Create overlay ---
+    // --- Create overlay covering the entire viewport ---
     const overlay = document.createElement('div');
     overlay.id = 'pip-sampler-overlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;cursor:crosshair;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;cursor:crosshair;';
 
     // --- Create tooltip ---
     const tooltip = document.createElement('div');
     tooltip.id = 'pip-sampler-tooltip';
-    tooltip.style.cssText = 'position:fixed;pointer-events:none;z-index:1000000;background:#1a1a1c;color:#f0f0f0;padding:6px 10px;border-radius:8px;font-family:monospace;font-size:12px;display:flex;align-items:center;gap:8px;border:1px solid #3f3f46;box-shadow:0 4px 12px rgba(0,0,0,0.4);';
+    tooltip.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;background:#1a1a1c;color:#f0f0f0;padding:6px 10px;border-radius:8px;font-family:monospace;font-size:12px;display:flex;align-items:center;gap:8px;border:1px solid #3f3f46;box-shadow:0 4px 12px rgba(0,0,0,0.4);';
 
     const swatch = document.createElement('div');
     swatch.style.cssText = 'width:16px;height:16px;border-radius:50%;border:1px solid #3f3f46;flex-shrink:0;';
 
     const hexText = document.createElement('span');
-    hexText.textContent = 'Loading slide...';
+    hexText.textContent = 'Loading screen...';
 
     tooltip.appendChild(swatch);
     tooltip.appendChild(hexText);
     document.body.appendChild(overlay);
     document.body.appendChild(tooltip);
 
-    let loadingSrc = '';
+    let cachedCanvas = null;
+    let cachedCtx = null;
 
-    // Load the slide image with CORS so we can read pixels
-    function loadSlideImage(callback) {
-        if (!slideImg) return;
-        const currentSrc = slideImg.src;
-        if (currentSrc === lastSrc && cachedCanvas) {
-            callback(true);
-            return;
-        }
-        if (currentSrc === loadingSrc) {
-            return; // Already loading
-        }
-
-        loadingSrc = currentSrc;
-        const newImg = new Image();
-        newImg.crossOrigin = 'anonymous';
-        newImg.onload = () => {
-            if (loadingSrc !== currentSrc) return; // Stale load
-            cachedCanvas = document.createElement('canvas');
-            cachedCanvas.width = newImg.naturalWidth;
-            cachedCanvas.height = newImg.naturalHeight;
-            cachedCtx = cachedCanvas.getContext('2d');
-            cachedCtx.drawImage(newImg, 0, 0);
-            lastSrc = currentSrc;
-            callback(true);
-        };
-        newImg.onerror = () => {
-            loadingSrc = '';
-            callback(false);
-        };
-        newImg.src = currentSrc;
+    function rgbaToHex(r, g, b) {
+        return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
     }
 
-    // Helper: Average color in an 11x11 box to ignore WebP artifacts and text edges
+    // Phase 1: Ask background script for a screenshot of the current visual state
+    chrome.runtime.sendMessage({ type: 'request-screenshot' }, (response) => {
+        if (!response || !response.dataUrl) {
+            hexText.textContent = 'Screenshot failed';
+            return;
+        }
+        const img = new Image();
+        img.onload = () => {
+            cachedCanvas = document.createElement('canvas');
+            cachedCanvas.width = img.width;
+            cachedCanvas.height = img.height;
+            cachedCtx = cachedCanvas.getContext('2d');
+            cachedCtx.drawImage(img, 0, 0);
+            hexText.textContent = 'Click to track';
+        };
+        img.src = response.dataUrl;
+    });
+
     function getAverageColor(cx, cy) {
+        if (!cachedCanvas || !cachedCtx) return null;
         try {
             const size = 11;
             const startX = Math.max(0, cx - Math.floor(size/2));
@@ -102,83 +59,31 @@ function startLiveSampler() {
             const height = Math.min(size, cachedCanvas.height - startY);
             
             const imgData = cachedCtx.getImageData(startX, startY, width, height).data;
-            let r = 0, g = 0, b = 0, count = 0;
-            
-            for (let i = 0; i < imgData.length; i += 4) {
-                // Ignore transparent pixels
-                if (imgData[i+3] > 128) {
-                    r += imgData[i];
-                    g += imgData[i+1];
-                    b += imgData[i+2];
-                    count++;
-                }
+            let r=0, g=0, b=0, c=0;
+            for (let i=0; i<imgData.length; i+=4) {
+                r+=imgData[i]; g+=imgData[i+1]; b+=imgData[i+2]; c++;
             }
-            if (count === 0) return null;
-            
-            r = Math.round(r / count);
-            g = Math.round(g / count);
-            b = Math.round(b / count);
-            
-            return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
-        } catch (e) {
-            return null;
-        }
+            if (c===0) return null;
+            return rgbaToHex(Math.round(r/c), Math.round(g/c), Math.round(b/c));
+        } catch (e) { return null; }
     }
-
-    // Read pixel from cached canvas at client coordinates
-    function getPixelAt(clientX, clientY) {
-        if (!cachedCanvas || !cachedCtx) return null;
-
-        const rect = slideImg.getBoundingClientRect();
-        
-        // Calculate relative position (0.0 to 1.0) to survive slide resolution changes
-        const relX = (clientX - rect.left) / rect.width;
-        const relY = (clientY - rect.top) / rect.height;
-        
-        if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
-
-        const cx = Math.floor(relX * cachedCanvas.width);
-        const cy = Math.floor(relY * cachedCanvas.height);
-
-        const hex = getAverageColor(cx, cy);
-        if (!hex) return null;
-        
-        return { hex, relX, relY };
-    }
-
-    // Read pixel from cached canvas at stored relative coordinates
-    function readTrackedPixel() {
-        if (!cachedCanvas || !cachedCtx) return null;
-        const cx = Math.floor(trackingRelX * cachedCanvas.width);
-        const cy = Math.floor(trackingRelY * cachedCanvas.height);
-        return getAverageColor(cx, cy);
-    }
-
-    function applyColor(hex) {
-        if (!hex || hex === lastColor) return;
-        lastColor = hex;
-        const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-        if (appWrapper) {
-            appWrapper.style.setProperty('background-color', hex, 'important');
-        }
-        chrome.runtime.sendMessage({ type: 'sampler-color-update', color: hex }).catch(() => {});
-    }
-
-    // Initial load of slide image
-    loadSlideImage((ok) => {
-        hexText.textContent = ok ? 'Click to track a pixel' : 'Failed to load slide';
-    });
-
-    // ===== PHASE 1: Pixel selection =====
 
     overlay.addEventListener('mousemove', (e) => {
         tooltip.style.left = (e.clientX + 16) + 'px';
         tooltip.style.top = (e.clientY + 16) + 'px';
 
-        const result = getPixelAt(e.clientX, e.clientY);
-        if (result) {
-            swatch.style.backgroundColor = result.hex;
-            hexText.textContent = result.hex.toUpperCase();
+        if (!cachedCanvas) return;
+        
+        // Map viewport coordinates directly to screenshot resolution
+        const relX = e.clientX / window.innerWidth;
+        const relY = e.clientY / window.innerHeight;
+        const cx = Math.floor(relX * cachedCanvas.width);
+        const cy = Math.floor(relY * cachedCanvas.height);
+        
+        const hex = getAverageColor(cx, cy);
+        if (hex) {
+            swatch.style.backgroundColor = hex;
+            hexText.textContent = hex.toUpperCase();
         }
     });
 
@@ -186,104 +91,38 @@ function startLiveSampler() {
         e.preventDefault();
         e.stopPropagation();
 
-        const result = getPixelAt(e.clientX, e.clientY);
-        if (!result) {
-            hexText.textContent = '\u26a0 Try again!';
-            setTimeout(() => { hexText.textContent = 'Click to track'; }, 1500);
-            return;
-        }
+        if (!cachedCanvas) return;
 
-        // Lock coordinates
-        trackingRelX = result.relX;
-        trackingRelY = result.relY;
+        const relX = e.clientX / window.innerWidth;
+        const relY = e.clientY / window.innerHeight;
+        const cx = Math.floor(relX * cachedCanvas.width);
+        const cy = Math.floor(relY * cachedCanvas.height);
+        const hex = getAverageColor(cx, cy);
 
-        // Remove selection UI
+        // Remove UI
         overlay.remove();
         tooltip.remove();
+        document.removeEventListener('keydown', escHandler);
 
-        // Apply initial color
-        applyColor(result.hex);
+        // Apply immediately locally
+        if (hex) {
+            const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+            if (appWrapper) appWrapper.style.setProperty('background-color', hex, 'important');
+        }
 
-        // Notify background
-        chrome.runtime.sendMessage({ type: 'sampler-started' }).catch(() => {});
-
-        // ===== PHASE 2: Continuous tracking =====
-        startTracking();
+        // Delegate Phase 2 continuous tracking to Background Script
+        chrome.runtime.sendMessage({ type: 'start-tracking', relX, relY, initialHex: hex }).catch(()=>{});
     });
 
-    // Escape to cancel
     function escHandler(e) {
         if (e.key === 'Escape') {
-            cleanup();
+            overlay.remove();
+            tooltip.remove();
             document.removeEventListener('keydown', escHandler);
+            chrome.runtime.sendMessage({ type: 'sampler-stopped' }).catch(()=>{});
         }
     }
     document.addEventListener('keydown', escHandler);
-
-    function startTracking() {
-        // Poll frequently (200ms) instead of MutationObserver
-        // React destroys and recreates <img> tags on scrubs, breaking observers
-        pollInterval = setInterval(() => {
-            if (!samplerActive) return;
-
-            // 1. Re-find the active slide image (iterate backwards to get the top-most/newest image)
-            const imgs = document.querySelectorAll('img');
-            let currentSlideImg = null;
-            let maxArea = 0;
-
-            for (let i = imgs.length - 1; i >= 0; i--) {
-                const img = imgs[i];
-                const rect = img.getBoundingClientRect();
-                const area = rect.width * rect.height;
-                // Only consider large images that are actually visible
-                if (area > maxArea && area > 10000 && rect.width > 0 && rect.height > 0) {
-                    const style = window.getComputedStyle(img);
-                    if (style.opacity !== '0' && style.display !== 'none' && style.visibility !== 'hidden') {
-                        maxArea = area;
-                        currentSlideImg = img;
-                    }
-                }
-            }
-
-            if (currentSlideImg) {
-                slideImg = currentSlideImg; // Update global reference
-                
-                // 2. If src changed (e.g. video scrubbed or slide changed), trigger reload
-                if (slideImg.src !== lastSrc) {
-                    loadSlideImage((ok) => {
-                        if (ok) {
-                            const hex = readTrackedPixel();
-                            applyColor(hex);
-                        }
-                    });
-                } else if (cachedCanvas) {
-                    // 3. Even if src didn't change, re-apply color continuously
-                    // In case App__Wrapper was re-rendered by React and lost our inline style
-                    const hex = readTrackedPixel();
-                    applyColor(hex);
-                }
-            }
-        }, 200); // 200ms polling handles scrubs smoothly and reliably
-    }
-
-    function cleanup() {
-        samplerActive = false;
-        if (pollInterval) clearInterval(pollInterval);
-        if (observer) observer.disconnect();
-        const o = document.getElementById('pip-sampler-overlay');
-        if (o) o.remove();
-        const t = document.getElementById('pip-sampler-tooltip');
-        if (t) t.remove();
-        chrome.runtime.sendMessage({ type: 'sampler-stopped' }).catch(() => {});
-    }
-
-    // Listen for stop command from popup/background
-    chrome.runtime.onMessage.addListener(function stopHandler(msg) {
-        if (msg.type === 'stop-sampler') {
-            cleanup();
-            chrome.runtime.onMessage.removeListener(stopHandler);
-        }
-    });
 }
 
 
@@ -440,11 +279,11 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // Start the sampler — inject into active tab and close popup
                 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                    if (!tabs || tabs.length === 0) return;
                     chrome.scripting.executeScript({
-                        target: { tabId: tabs[0].id, allFrames: true },
+                        target: { tabId: tabs[0].id, allFrames: false },
                         func: startLiveSampler
-                    });
+                    }).catch(() => {});
+                    // Close popup immediately so the user can interact with the page
                     window.close();
                 });
             }

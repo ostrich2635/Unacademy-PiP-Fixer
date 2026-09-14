@@ -1,42 +1,110 @@
 
-// ===== Live Sampler message relay =====
-let colorSaveTimeout = null;
+// ===== Screenshot-based Live Tracker =====
+let trackingTabId = null;
+let trackingRelX = 0;
+let trackingRelY = 0;
+let trackingInterval = null;
+let lastTrackedHex = '';
+
+function rgbaToHex(r, g, b) {
+    return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function stopTracking() {
+    if (trackingInterval) {
+        clearInterval(trackingInterval);
+        trackingInterval = null;
+    }
+    trackingTabId = null;
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'sampler-started') {
-    chrome.storage.local.set({ samplerActive: true });
-  } else if (msg.type === 'sampler-stopped') {
-    chrome.storage.local.set({ samplerActive: false });
-  } else if (msg.type === 'sampler-color-update') {
-    // Debounce storage saves (max once per second)
-    if (colorSaveTimeout) clearTimeout(colorSaveTimeout);
-    colorSaveTimeout = setTimeout(() => {
-      chrome.storage.local.set({ savedColor: msg.color });
-    }, 1000);
+    if (msg.type === 'request-screenshot') {
+        chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, (dataUrl) => {
+            sendResponse({ dataUrl });
+        });
+        return true; // Keep channel open for async response
+        
+    } else if (msg.type === 'start-tracking') {
+        trackingTabId = sender.tab.id;
+        trackingRelX = msg.relX;
+        trackingRelY = msg.relY;
+        lastTrackedHex = msg.initialHex;
 
-    // Apply color to the top frame immediately
-    if (sender.tab) {
-      chrome.scripting.executeScript({
-        target: { tabId: sender.tab.id, allFrames: true },
-        func: (color) => {
-          const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
-          if (appWrapper) {
-            appWrapper.style.setProperty('background-color', color, 'important');
-          }
-        },
-        args: [msg.color]
-      }).catch(() => {});
+        chrome.storage.local.set({ samplerActive: true });
+        
+        stopTracking();
+        trackingInterval = setInterval(async () => {
+            if (!trackingTabId) return;
+            try {
+                const tab = await chrome.tabs.get(trackingTabId);
+                if (!tab) { stopTracking(); return; }
+                
+                // Screenshot the entire visual tab viewport
+                const dataUrl = await new Promise(resolve => {
+                    chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 10 }, resolve);
+                });
+                if (!dataUrl) return;
+
+                // Load screenshot into OffscreenCanvas in background worker
+                const response = await fetch(dataUrl);
+                const blob = await response.blob();
+                const bitmap = await createImageBitmap(blob);
+                
+                const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(bitmap, 0, 0);
+                
+                // Map top-window relative coordinates directly to screenshot dimensions
+                const cx = Math.floor(trackingRelX * bitmap.width);
+                const cy = Math.floor(trackingRelY * bitmap.height);
+                
+                const size = 11;
+                const startX = Math.max(0, cx - Math.floor(size/2));
+                const startY = Math.max(0, cy - Math.floor(size/2));
+                const w = Math.min(size, bitmap.width - startX);
+                const h = Math.min(size, bitmap.height - startY);
+                
+                const imgData = ctx.getImageData(startX, startY, w, h).data;
+                let r=0, g=0, b=0, c=0;
+                for(let i=0; i<imgData.length; i+=4) {
+                    r+=imgData[i]; g+=imgData[i+1]; b+=imgData[i+2]; c++;
+                }
+                if (c===0) return;
+                r = Math.round(r/c); g = Math.round(g/c); b = Math.round(b/c);
+                const hex = rgbaToHex(r, g, b);
+                
+                if (hex && hex !== lastTrackedHex) {
+                    lastTrackedHex = hex;
+                    chrome.storage.local.set({ savedColor: hex });
+                    // Execute in ALL frames to catch the App__Wrapper wherever it is
+                    chrome.scripting.executeScript({
+                        target: { tabId: trackingTabId, allFrames: true },
+                        func: (color) => {
+                            const appWrapper = document.querySelector('div[class*="App__Wrapper"]');
+                            if (appWrapper) appWrapper.style.setProperty('background-color', color, 'important');
+                        },
+                        args: [hex]
+                    }).catch(()=>{});
+                }
+            } catch (e) {
+                // Ignore tab removed errors
+            }
+        }, 500); // 500ms loop — smooth and reliable
+        
+    } else if (msg.type === 'sampler-stopped' || msg.type === 'stop-sampler-from-popup') {
+        stopTracking();
+        chrome.storage.local.set({ samplerActive: false });
+        if (msg.type === 'stop-sampler-from-popup') {
+            // Forward stop command to active tab
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs && tabs[0]) {
+                    chrome.tabs.sendMessage(tabs[0].id, { type: 'stop-sampler' }).catch(() => {});
+                }
+            });
+        }
     }
-  } else if (msg.type === 'stop-sampler-from-popup') {
-    // Forward stop command to the active tab's content scripts
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'stop-sampler' }).catch(() => {});
-      }
-    });
-    chrome.storage.local.set({ samplerActive: false });
-  }
-  return true; // Keep message channel open
+    return true;
 });
 
 // Listen for commands
