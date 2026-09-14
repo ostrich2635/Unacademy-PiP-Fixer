@@ -49,27 +49,57 @@ function startLiveSampler() {
     }
 
     function getColorAtPoint(x, y) {
-        // Temporarily hide overlay so elementFromPoint sees through it
-        overlay.style.pointerEvents = 'none';
-        const el = document.elementFromPoint(x, y);
-        overlay.style.pointerEvents = '';
+        // Find the best canvas — the largest one that contains the click point
+        const allCanvases = document.querySelectorAll('canvas');
+        let bestCanvas = null;
+        let bestArea = 0;
 
-        if (el && el.tagName === 'CANVAS') {
+        for (const c of allCanvases) {
+            const rect = c.getBoundingClientRect();
+            // Check if the click point is inside this canvas's bounding box
+            if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                const area = rect.width * rect.height;
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestCanvas = c;
+                }
+            }
+        }
+
+        // If no canvas contains the point, try the largest canvas in the frame
+        if (!bestCanvas && allCanvases.length > 0) {
+            for (const c of allCanvases) {
+                const rect = c.getBoundingClientRect();
+                const area = rect.width * rect.height;
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestCanvas = c;
+                }
+            }
+        }
+
+        if (bestCanvas) {
             try {
-                const rect = el.getBoundingClientRect();
-                const scaleX = el.width / rect.width;
-                const scaleY = el.height / rect.height;
+                const rect = bestCanvas.getBoundingClientRect();
+                const scaleX = bestCanvas.width / rect.width;
+                const scaleY = bestCanvas.height / rect.height;
                 const cx = Math.round((x - rect.left) * scaleX);
                 const cy = Math.round((y - rect.top) * scaleY);
-                const ctx = el.getContext('2d');
-                const pixel = ctx.getImageData(cx, cy, 1, 1).data;
-                return { hex: rgbaToHex(pixel[0], pixel[1], pixel[2]), canvas: el, cx, cy };
+                // Clamp to canvas bounds
+                const clampedX = Math.max(0, Math.min(cx, bestCanvas.width - 1));
+                const clampedY = Math.max(0, Math.min(cy, bestCanvas.height - 1));
+                const ctx = bestCanvas.getContext('2d');
+                const pixel = ctx.getImageData(clampedX, clampedY, 1, 1).data;
+                return { hex: rgbaToHex(pixel[0], pixel[1], pixel[2]), canvas: bestCanvas, cx: clampedX, cy: clampedY };
             } catch (e) {
                 // Canvas tainted — fall through to CSS fallback
             }
         }
 
-        // Fallback: read CSS background-color
+        // Fallback: read CSS background-color of whatever element is at the point
+        overlay.style.pointerEvents = 'none';
+        const el = document.elementFromPoint(x, y);
+        overlay.style.pointerEvents = '';
         if (el) {
             const bg = window.getComputedStyle(el).backgroundColor;
             const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
@@ -88,7 +118,7 @@ function startLiveSampler() {
 
         const result = getColorAtPoint(e.clientX, e.clientY);
         swatch.style.backgroundColor = result.hex;
-        hexText.textContent = result.canvas ? result.hex.toUpperCase() : 'Click on whiteboard';
+        hexText.textContent = result.hex.toUpperCase();
     });
 
     overlay.addEventListener('click', (e) => {
